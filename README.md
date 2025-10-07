@@ -9,6 +9,10 @@ supervision effort, and helps improve road safety.
 # Importance
 Road accidents cause many injuries and deaths worldwide. Fast detection and reporting can save lives by
 bringing quicker medical help. Automated monitoring also helps traffic management and lowers costs from delays.
+# How to launch
+For training launch you have to: 
+- run all cells in src/data/data_download.ipynb
+- write `python -m src.models.model_train.baseline_cnn` in root directory.
 # Contributors
 Name Surname|Mail|Position
 -|-|-
