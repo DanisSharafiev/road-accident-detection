@@ -30,7 +30,7 @@ class CustomDataset(Dataset):
 
         return image, label
 
-def get_data_loader(image_dict, batch_size=32, shuffle=True, num_workers=4):
+def get_data_loader(image_dict, batch_size=32, shuffle=True, num_workers=4) -> DataLoader:
     """image_dict: dictionary with image paths as keys and labels as values"""
     transform = transforms.Compose([
         transforms.Resize((512, 512)),

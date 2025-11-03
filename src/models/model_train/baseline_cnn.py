@@ -4,18 +4,18 @@ from ...data.data_loader import get_data_loader
 from ..model_class.baseline_cnn import BaselineCNN
 
 train_paths = {
-    "datasets/1/data/train/Accident" : 1,
-    "datasets/1/data/train/Non Accident" : 0
+    "datasets/train/Accident" : 1,
+    "datasets/train/Non Accident" : 0
 }
 
 val_paths = {
-    "datasets/1/data/val/Accident" : 1,
-    "datasets/1/data/val/Non Accident" : 0
+    "datasets/val/Accident" : 1,
+    "datasets/val/Non Accident" : 0
 }
 
 test_paths = {
-    "datasets/1/data/test/Accident" : 1,
-    "datasets/1/data/test/Non Accident" : 0
+    "datasets/test/Accident" : 1,
+    "datasets/test/Non Accident" : 0
 }
 
 
@@ -28,7 +28,7 @@ if __name__ == "__main__":
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     num_epochs = 10
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
     model = model.to(device)
     print(f"Training on device: {device}")
 
