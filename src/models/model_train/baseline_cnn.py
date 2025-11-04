@@ -22,6 +22,7 @@ test_paths = {
 if __name__ == "__main__":
     dataloader = get_data_loader(image_dict=train_paths, batch_size=32, shuffle=True, num_workers=4)
     val_dataloader = get_data_loader(image_dict=val_paths, batch_size=32, shuffle=False, num_workers=4)
+    test_dataloader = get_data_loader(image_dict=test_paths, batch_size=32, shuffle=False, num_workers=4)
     print(f"Number of batches: {len(dataloader)}")
 
     model = BaselineCNN(num_classes=2)
@@ -35,10 +36,7 @@ if __name__ == "__main__":
     for epoch in range(num_epochs):
         model.train()
         running_loss = 0.0
-        count = 0
         for images, labels in dataloader:
-            print(f"Batch - images shape: {images.shape}, labels shape: {labels.shape}, count: {count}")
-            count += 1
             images = images.to(device)
             labels = labels.to(device)
 
@@ -72,5 +70,20 @@ if __name__ == "__main__":
         validation_loss /= len(val_dataloader.dataset)
         validation_accuracy = correct / total if total > 0 else 0
         print(f"Validation Loss: {validation_loss:.4f}, Accuracy: {validation_accuracy:.4f}")
+
+    # test the model
+    test_loss = 0.0
+    total = 0
+    correct = 0
+    model.eval()
+    with torch.no_grad():
+        for images, labels in test_dataloader:
+            images = images.to(device)
+            labels = labels.to(device)
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+            test_loss += loss.item() * images.size(0)
+    
+    print(f"Test Loss: {test_loss/len(test_dataloader.dataset):.4f}, Accuracy: {correct/total:.4f}")
 
     torch.save(model.state_dict(), "models/baseline_cnn.pth")
