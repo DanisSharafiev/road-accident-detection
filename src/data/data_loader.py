@@ -5,7 +5,11 @@ from PIL import Image
 import os
 
 class CustomDataset(Dataset):
-    def __init__(self, image_dict, transform=None):
+    """Custom dataset for loading images and labels from a dictionary of image paths and labels."""
+    def __init__(self, 
+                 image_dict : dict[str, int], 
+                 transform : transforms.Compose | None = None
+                 ) -> None:
         self.image_dict = image_dict
         self.transform = transform
         self.image_files = []
@@ -30,12 +34,31 @@ class CustomDataset(Dataset):
 
         return image, label
 
-def get_data_loader(image_dict, batch_size=32, shuffle=True, num_workers=4) -> DataLoader:
-    """image_dict: dictionary with image paths as keys and labels as values"""
+def get_data_loader(image_dict : dict[str, int], 
+                    batch_size : int = 32, 
+                    shuffle : bool = True, 
+                    num_workers : int = 4, 
+                    augment : bool = False,
+                    custom_transforms: transforms.Compose | None = None
+                    ) -> DataLoader:
+    """returns a pytorch DataLoader for the given image dictionary.\n
+    image_dict: dictionary with image paths as keys and labels as values"""
     transform = transforms.Compose([
         transforms.Resize((512, 512)),
         transforms.ToTensor(),
     ])
+
+    if augment:
+        transform = transforms.Compose([
+            transforms.Resize((512, 512)),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomRotation(10),
+            transforms.ToTensor(),
+        ])
+    
+    if custom_transforms:
+        transform = custom_transforms
+    
     dataset = CustomDataset(image_dict=image_dict, transform=transform)
     data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
     
