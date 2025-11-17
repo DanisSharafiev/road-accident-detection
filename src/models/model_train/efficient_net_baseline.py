@@ -1,0 +1,145 @@
+import torch
+import torch.nn as nn
+from ...data.data_loader import get_data_loader
+from ..model_class.efficient_net_baseline import EfficientNetBaseline
+
+
+# ──────────────────────── Пути к данным ────────────────────────
+train_paths = {
+    "datasets/1/data/train/Accident":      1,
+    "datasets/1/data/train/Non Accident":  0
+}
+
+val_paths = {
+    "datasets/1/data/val/Accident":        1,
+    "datasets/1/data/val/Non Accident":    0
+}
+
+test_paths = {
+    "datasets/1/data/test/Accident":       1,
+    "datasets/1/data/test/Non Accident":   0
+}
+
+
+# ────────────────── Вспомогательные функции ──────────────────
+def calculate_accuracy(outputs, labels):
+    """Возвращает (correct, total) для вычисления accuracy."""
+    _, preds = torch.max(outputs.data, 1)
+    total   = labels.size(0)
+    correct = (preds == labels).sum().item()
+    return correct, total
+
+
+def print_epoch_stats(ep, num_ep, tr_loss, tr_acc, val_loss, val_acc):
+    """Красивый вывод статистики эпохи."""
+    bar = "=" * 80
+    print(bar)
+    print(f"📊  EPOCH [{ep+1:2d}/{num_ep:2d}]")
+    print(f"   🔹 Train      Loss: {tr_loss:.6f} | Acc: {tr_acc:.4f} ({tr_acc*100:5.2f}%)")
+    print(f"   🔹 Validation Loss: {val_loss:.6f} | Acc: {val_acc:.4f} ({val_acc*100:5.2f}%)")
+    print(bar)
+
+
+# ──────────────────────── Точка входа ────────────────────────
+if __name__ == "__main__":
+    # Даталоадеры
+    train_loader = get_data_loader(train_paths, batch_size=16, shuffle=True,  num_workers=4)
+    val_loader   = get_data_loader(val_paths,   batch_size=16, shuffle=False, num_workers=4)
+    print(f"📁 Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
+
+    # Модель (можно выбрать 'b0', 'b1', 'b2' для разных версий EfficientNet)
+    model = EfficientNetBaseline(
+        num_classes=2,
+        pretrained=True,
+        freeze_features=True,
+        model_variant='b0'  # или 'b1', 'b2' для более мощных моделей
+    )
+
+    # Обучение
+    criterion   = nn.CrossEntropyLoss()
+    optimizer   = torch.optim.Adam(model.parameters(), lr=1e-4)
+    num_epochs  = 10
+    device      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model       = model.to(device)
+
+    print(f"🚀 Device: {device}")
+    print(f"🎯 Params total/trainable: "
+          f"{sum(p.numel() for p in model.parameters())}/"
+          f"{sum(p.numel() for p in model.parameters() if p.requires_grad)}")
+
+    # История
+    train_losses, val_losses = [], []
+    train_accs,  val_accs   = [], []
+
+    print("\n🔥 START TRAINING"); print("=" * 80)
+
+    for epoch in range(num_epochs):
+        # ---------- Train ----------
+        model.train()
+        run_loss, correct, total = 0.0, 0, 0
+
+        for b, (imgs, lbls) in enumerate(train_loader):
+            imgs, lbls = imgs.to(device), lbls.to(device)
+
+            optimizer.zero_grad()
+            outs  = model(imgs)
+            loss  = criterion(outs, lbls)
+            loss.backward()
+            optimizer.step()
+
+            run_loss += loss.item() * imgs.size(0)
+            c, t     = calculate_accuracy(outs, lbls)
+            correct += c; total += t
+
+            if b % 10 == 0:
+                batch_acc = c / t
+                print(f"[Ep {epoch+1}/{num_epochs}] Batch {b:3d}/{len(train_loader)} "
+                      f"Loss: {loss.item():.4f} | Acc: {batch_acc:.4f}")
+
+        epoch_tr_loss = run_loss / len(train_loader.dataset)
+        epoch_tr_acc  = correct / total
+
+        # ---------- Validation ----------
+        model.eval()
+        v_loss, v_correct, v_total = 0.0, 0, 0
+        with torch.no_grad():
+            for imgs, lbls in val_loader:
+                imgs, lbls = imgs.to(device), lbls.to(device)
+                outs = model(imgs)
+                loss = criterion(outs, lbls)
+                v_loss += loss.item() * imgs.size(0)
+                c, t   = calculate_accuracy(outs, lbls)
+                v_correct += c; v_total += t
+
+        epoch_val_loss = v_loss / len(val_loader.dataset)
+        epoch_val_acc  = v_correct / v_total
+
+        # Сохраняем историю и выводим статистику
+        train_losses.append(epoch_tr_loss); train_accs.append(epoch_tr_acc)
+        val_losses.append(epoch_val_loss);   val_accs.append(epoch_val_acc)
+        print_epoch_stats(epoch, num_epochs, epoch_tr_loss, epoch_tr_acc,
+                          epoch_val_loss, epoch_val_acc)
+
+    import os
+
+    # ---------- Итог ----------
+    best_acc  = max(val_accs)
+    best_ep   = val_accs.index(best_acc) + 1
+    print(f"\n🏆 Best val-accuracy: {best_acc:.4f} at epoch {best_ep}")
+
+    # Создаем директорию, если её нет
+    os.makedirs("models", exist_ok=True)
+
+    torch.save({
+        "epoch":          num_epochs,
+        "model_state":    model.state_dict(),
+        "optimizer_state":optimizer.state_dict(),
+        "train_losses":   train_losses,
+        "train_accs":     train_accs,
+        "val_losses":     val_losses,
+        "val_accs":       val_accs,
+        "best_acc":       best_acc,
+        "best_epoch":     best_ep
+    }, "models/efficientnet_baseline.pth")
+
+    print("✅  Saved to  models/efficientnet_baseline.pth")

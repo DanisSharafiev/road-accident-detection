@@ -1,90 +1,140 @@
 import torch
 import torch.nn as nn
 from ...data.data_loader import get_data_loader
-from ..model_class.baseline_vgg16  import VGG16Baseline
+from ..model_class.baseline_vgg16 import VGG16Baseline
 
-# Пути к данным
+
+# ──────────────────────── Пути к данным ────────────────────────
 train_paths = {
-    "datasets/1/data/train/Accident": 1,
-    "datasets/1/data/train/Non Accident": 0
+    "datasets/1/data/train/Accident":      1,
+    "datasets/1/data/train/Non Accident":  0
 }
 
 val_paths = {
-    "datasets/1/data/val/Accident": 1,
-    "datasets/1/data/val/Non Accident": 0
+    "datasets/1/data/val/Accident":        1,
+    "datasets/1/data/val/Non Accident":    0
 }
 
 test_paths = {
-    "datasets/1/data/test/Accident": 1,
-    "datasets/1/data/test/Non Accident": 0
+    "datasets/1/data/test/Accident":       1,
+    "datasets/1/data/test/Non Accident":   0
 }
 
 
-if __name__ == "__main__":
-    # Загружаем данные
-    train_loader = get_data_loader(image_dict=train_paths, batch_size=16, shuffle=True, num_workers=4)
-    val_loader = get_data_loader(image_dict=val_paths, batch_size=16, shuffle=False, num_workers=4)
-    print(f"Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
+# ────────────────── Вспомогательные функции ──────────────────
+def calculate_accuracy(outputs, labels):
+    """Возвращает (correct, total) для вычисления accuracy."""
+    _, preds = torch.max(outputs.data, 1)
+    total   = labels.size(0)
+    correct = (preds == labels).sum().item()
+    return correct, total
 
-    # Инициализация модели
+
+def print_epoch_stats(ep, num_ep, tr_loss, tr_acc, val_loss, val_acc):
+    """Красивый вывод статистики эпохи."""
+    bar = "=" * 80
+    print(bar)
+    print(f"📊  EPOCH [{ep+1:2d}/{num_ep:2d}]")
+    print(f"   🔹 Train      Loss: {tr_loss:.6f} | Acc: {tr_acc:.4f} ({tr_acc*100:5.2f}%)")
+    print(f"   🔹 Validation Loss: {val_loss:.6f} | Acc: {val_acc:.4f} ({val_acc*100:5.2f}%)")
+    print(bar)
+
+
+# ──────────────────────── Точка входа ────────────────────────
+if __name__ == "__main__":
+    # Даталоадеры
+    train_loader = get_data_loader(train_paths, batch_size=16, shuffle=True,  num_workers=4)
+    val_loader   = get_data_loader(val_paths,   batch_size=16, shuffle=False, num_workers=4)
+    print(f"📁 Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
+
+    # Модель
     model = VGG16Baseline(num_classes=2, pretrained=True, freeze_features=True)
 
-    # Настройки обучения
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    num_epochs = 10
+    # Обучение
+    criterion   = nn.CrossEntropyLoss()
+    optimizer   = torch.optim.Adam(model.parameters(), lr=1e-4)
+    num_epochs  = 10
+    device      = torch.device("cuda")
+    model       = model.to(device)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
-    print(f"Training on device: {device}")
+    print(f"🚀 Device: {device}")
+    print(f"🎯 Params total/trainable: "
+          f"{sum(p.numel() for p in model.parameters())}/"
+          f"{sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
-    # Цикл обучения
+    # История
+    train_losses, val_losses = [], []
+    train_accs,  val_accs   = [], []
+
+    print("\n🔥 START TRAINING"); print("=" * 80)
+
     for epoch in range(num_epochs):
+        # ---------- Train ----------
         model.train()
-        running_loss = 0.0
+        run_loss, correct, total = 0.0, 0, 0
 
-        for batch_idx, (images, labels) in enumerate(train_loader):
-            images = images.to(device)
-            labels = labels.to(device)
+        for b, (imgs, lbls) in enumerate(train_loader):
+            imgs, lbls = imgs.to(device), lbls.to(device)
 
             optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
+            outs  = model(imgs)
+            loss  = criterion(outs, lbls)
             loss.backward()
             optimizer.step()
 
-            running_loss += loss.item() * images.size(0)
+            run_loss += loss.item() * imgs.size(0)
+            c, t     = calculate_accuracy(outs, lbls)
+            correct += c; total += t
 
-            if batch_idx % 10 == 0:
-                print(f"[Epoch {epoch+1}/{num_epochs}] Batch {batch_idx}/{len(train_loader)} | Loss: {loss.item():.4f}")
+            if b % 10 == 0:
+                batch_acc = c / t
+                print(f"[Ep {epoch+1}/{num_epochs}] Batch {b:3d}/{len(train_loader)} "
+                      f"Loss: {loss.item():.4f} | Acc: {batch_acc:.4f}")
 
-        epoch_loss = running_loss / len(train_loader.dataset)
-        print(f"Epoch [{epoch+1}/{num_epochs}] | Training Loss: {epoch_loss:.4f}")
+        epoch_tr_loss = run_loss / len(train_loader.dataset)
+        epoch_tr_acc  = correct / total
 
-        # ----- Валидация -----
+        # ---------- Validation ----------
         model.eval()
-        val_loss = 0.0
-        total = 0
-        correct = 0
-
+        v_loss, v_correct, v_total = 0.0, 0, 0
         with torch.no_grad():
-            for images, labels in val_loader:
-                images = images.to(device)
-                labels = labels.to(device)
+            for imgs, lbls in val_loader:
+                imgs, lbls = imgs.to(device), lbls.to(device)
+                outs = model(imgs)
+                loss = criterion(outs, lbls)
+                v_loss += loss.item() * imgs.size(0)
+                c, t   = calculate_accuracy(outs, lbls)
+                v_correct += c; v_total += t
 
-                outputs = model(images)
-                loss = criterion(outputs, labels)
-                val_loss += loss.item() * images.size(0)
+        epoch_val_loss = v_loss / len(val_loader.dataset)
+        epoch_val_acc  = v_correct / v_total
 
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
+        # Сохраняем историю и выводим статистику
+        train_losses.append(epoch_tr_loss); train_accs.append(epoch_tr_acc)
+        val_losses.append(epoch_val_loss);   val_accs.append(epoch_val_acc)
+        print_epoch_stats(epoch, num_epochs, epoch_tr_loss, epoch_tr_acc,
+                          epoch_val_loss, epoch_val_acc)
 
-        val_loss /= len(val_loader.dataset)
-        val_acc = correct / total if total > 0 else 0.0
+    import os
 
-        print(f"Validation Loss: {val_loss:.4f} | Accuracy: {val_acc:.4f}\n")
+    # ---------- Итог ----------
+    best_acc  = max(val_accs)
+    best_ep   = val_accs.index(best_acc) + 1
+    print(f"\n🏆 Best val-accuracy: {best_acc:.4f} at epoch {best_ep}")
 
-    # Сохраняем веса
-    torch.save(model.state_dict(), "models/vgg16_baseline.pth")
-    print("✅ Model saved to models/vgg16_baseline.pth")
+    # Создаем директорию, если её нет
+    os.makedirs("src/models", exist_ok=True)
+
+    torch.save({
+        "epoch":          num_epochs,
+        "model_state":    model.state_dict(),
+        "optimizer_state":optimizer.state_dict(),
+        "train_losses":   train_losses,
+        "train_accs":     train_accs,
+        "val_losses":     val_losses,
+        "val_accs":       val_accs,
+        "best_acc":       best_acc,
+        "best_epoch":     best_ep
+    }, "models/vgg16_baseline.pth")
+
+    print("✅  Saved to  models/vgg16_baseline.pth")
