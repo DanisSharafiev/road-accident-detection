@@ -13,6 +13,9 @@ bringing quicker medical help. Automated monitoring also helps traffic managemen
 For training launch you have to: 
 - run all cells in src/data/data_download.ipynb
 - write `python -m src.models.model_train.baseline_cnn` in root directory.
+For inference launch you have to:
+- write `python3 -m src.realtime.run_realtime --camera 0` for realtime camera inference
+- write `python3 -m src.realtime.run_realtime --video your.mp4` for video inference
 # Contributors
 Name Surname|Mail|Position
 -|-|-
