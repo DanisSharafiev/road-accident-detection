@@ -2,6 +2,9 @@ import cv2
 import torch
 import torchvision.transforms as transforms
 
+from src.realtime.q import Queue
+from src.realtime.logger import Logger
+
 from src.models.model_class.baseline_vgg16 import VGG16Baseline
 
 
@@ -25,8 +28,11 @@ class VideoInference:
 
         self.class_names = {0: "Non-Accident", 1: "Accident"}
 
-        print(f"[INFO] Loaded model from {model_path}")
-        print(f"[INFO] Running on device: {self.device}")
+        self.logger = Logger(log_path="logs/", log_level=0)
+        self.queue = Queue(n=120, check_range=30, density=20, logger=self.logger)
+
+        self.logger.log(f"Loaded model from {model_path}", log_level=0)
+        self.logger.log(f"Running on device: {self.device}", log_level=0)
 
     def preprocess(self, frame):
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -52,15 +58,15 @@ class VideoInference:
         cap = cv2.VideoCapture(source)
 
         if not cap.isOpened():
-            print("[ERROR] Cannot open video source:", source)
+            self.logger.log("Cannot open video source:", source, log_level=0)
             return
 
-        print("[INFO] Starting video stream...")
+        self.logger.log("Starting video stream...", log_level=2)
 
         while True:
             ret, frame = cap.read()
             if not ret:
-                print("[INFO] Stream ended.")
+                self.logger.log("Stream ended.", log_level=2)
                 break
 
             label, conf = self.predict(frame)
@@ -69,6 +75,16 @@ class VideoInference:
             color = (0, 255, 0) if label == 0 else (0, 0, 255)
             cv2.putText(frame, text, (20, 40),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+            
+            accident, noise = self.queue.check(conf if label == 1 else 1 - conf)
+
+            if accident and not noise:
+                cv2.putText(frame, "ACCIDENT DETECTED!", (20, 80),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+            
+            if accident and noise:
+                cv2.putText(frame, "ACCIDENT WITH NOISE DETECTED!", (20, 120),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 3)
 
             cv2.imshow("Real-time Accident Detection", frame)
 
