@@ -1,6 +1,7 @@
 import argparse
 from src.realtime.video_inference import VideoInference
-
+from src.realtime.q import Queue
+from src.realtime.logger import Logger
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Real-time Road Accident Detection")
