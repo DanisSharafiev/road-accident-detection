@@ -1,131 +1,140 @@
 import torch
 import torch.nn as nn
 from ...data.data_loader import get_data_loader
-from ..model_class.baseline_vgg16  import VGG16Baseline
-import torchvision.transforms as transforms
-import os
+from ..model_class.baseline_vgg16 import VGG16Baseline
 
+
+# ──────────────────────── Пути к данным ────────────────────────
 train_paths = {
-    "datasets/train/Accident": 1,
-    "datasets/train/Non Accident": 0
+    "datasets/1/data/train/Accident":      1,
+    "datasets/1/data/train/Non Accident":  0
 }
 
 val_paths = {
-    "datasets/val/Accident": 1,
-    "datasets/val/Non Accident": 0
+    "datasets/1/data/val/Accident":        1,
+    "datasets/1/data/val/Non Accident":    0
 }
 
 test_paths = {
-    "datasets/test/Accident": 1,
-    "datasets/test/Non Accident": 0
+    "datasets/1/data/test/Accident":       1,
+    "datasets/1/data/test/Non Accident":   0
 }
 
 
+# ────────────────── Вспомогательные функции ──────────────────
+def calculate_accuracy(outputs, labels):
+    """Возвращает (correct, total) для вычисления accuracy."""
+    _, preds = torch.max(outputs.data, 1)
+    total   = labels.size(0)
+    correct = (preds == labels).sum().item()
+    return correct, total
 
+
+def print_epoch_stats(ep, num_ep, tr_loss, tr_acc, val_loss, val_acc):
+    """Красивый вывод статистики эпохи."""
+    bar = "=" * 80
+    print(bar)
+    print(f"📊  EPOCH [{ep+1:2d}/{num_ep:2d}]")
+    print(f"   🔹 Train      Loss: {tr_loss:.6f} | Acc: {tr_acc:.4f} ({tr_acc*100:5.2f}%)")
+    print(f"   🔹 Validation Loss: {val_loss:.6f} | Acc: {val_acc:.4f} ({val_acc*100:5.2f}%)")
+    print(bar)
+
+
+# ──────────────────────── Точка входа ────────────────────────
 if __name__ == "__main__":
+    # Даталоадеры
+    train_loader = get_data_loader(train_paths, batch_size=16, shuffle=True,  num_workers=4)
+    val_loader   = get_data_loader(val_paths,   batch_size=16, shuffle=False, num_workers=4)
+    print(f"📁 Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
 
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-    ])
-
-    random_transform = transforms.Compose([
-        transforms.RandomResizedCrop(224, scale=(0.8, 1.0), ratio=(0.9, 1.1)),
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomApply([transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.02)], p=0.5),
-        transforms.RandomRotation(10),
-        transforms.ToTensor(),
-    ])
-
-    train_loader = get_data_loader(image_dict=train_paths, batch_size=32, shuffle=True, num_workers=4, augment=random_transform)
-    val_loader = get_data_loader(image_dict=val_paths, batch_size=32, shuffle=False, num_workers=4, augment=transform)
-    test_loader = get_data_loader(image_dict=test_paths, batch_size=32, shuffle=False, num_workers=4, augment=transform)
-    print(f"Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
-
+    # Модель
     model = VGG16Baseline(num_classes=2, pretrained=True, freeze_features=True)
 
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
-    num_epochs = 10
+    # Обучение
+    criterion   = nn.CrossEntropyLoss()
+    optimizer   = torch.optim.Adam(model.parameters(), lr=1e-4)
+    num_epochs  = 10
+    device      = torch.device("cuda")
+    model       = model.to(device)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
-    model = model.to(device)
-    best_model = None
-    best_val_loss = float('inf')
-    print(f"Training on device: {device}")
+    print(f"🚀 Device: {device}")
+    print(f"🎯 Params total/trainable: "
+          f"{sum(p.numel() for p in model.parameters())}/"
+          f"{sum(p.numel() for p in model.parameters() if p.requires_grad)}")
+
+    # История
+    train_losses, val_losses = [], []
+    train_accs,  val_accs   = [], []
+
+    print("\n🔥 START TRAINING"); print("=" * 80)
 
     for epoch in range(num_epochs):
+        # ---------- Train ----------
         model.train()
-        running_loss = 0.0
+        run_loss, correct, total = 0.0, 0, 0
 
-        for batch_idx, (images, labels) in enumerate(train_loader):
-            images = images.to(device)
-            labels = labels.to(device)
+        for b, (imgs, lbls) in enumerate(train_loader):
+            imgs, lbls = imgs.to(device), lbls.to(device)
 
             optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
+            outs  = model(imgs)
+            loss  = criterion(outs, lbls)
             loss.backward()
             optimizer.step()
 
-            running_loss += loss.item() * images.size(0)
+            run_loss += loss.item() * imgs.size(0)
+            c, t     = calculate_accuracy(outs, lbls)
+            correct += c; total += t
 
-            if batch_idx % 10 == 0:
-                print(f"[Epoch {epoch+1}/{num_epochs}] Batch {batch_idx}/{len(train_loader)} | Train Loss: {loss.item():.4f}")
+            if b % 10 == 0:
+                batch_acc = c / t
+                print(f"[Ep {epoch+1}/{num_epochs}] Batch {b:3d}/{len(train_loader)} "
+                      f"Loss: {loss.item():.4f} | Acc: {batch_acc:.4f}")
 
-        epoch_loss = running_loss / len(train_loader.dataset)
-        print(f"Epoch [{epoch+1}/{num_epochs}] | Training Loss: {epoch_loss:.4f}")
+        epoch_tr_loss = run_loss / len(train_loader.dataset)
+        epoch_tr_acc  = correct / total
 
+        # ---------- Validation ----------
         model.eval()
-        val_loss = 0.0
-        total = 0
-        correct = 0
-
+        v_loss, v_correct, v_total = 0.0, 0, 0
         with torch.no_grad():
-            for batch_idx, (images, labels) in enumerate(val_loader):
-                images = images.to(device)
-                labels = labels.to(device)
+            for imgs, lbls in val_loader:
+                imgs, lbls = imgs.to(device), lbls.to(device)
+                outs = model(imgs)
+                loss = criterion(outs, lbls)
+                v_loss += loss.item() * imgs.size(0)
+                c, t   = calculate_accuracy(outs, lbls)
+                v_correct += c; v_total += t
 
-                outputs = model(images)
-                loss = criterion(outputs, labels)
-                val_loss += loss.item() * images.size(0)
+        epoch_val_loss = v_loss / len(val_loader.dataset)
+        epoch_val_acc  = v_correct / v_total
 
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
+        # Сохраняем историю и выводим статистику
+        train_losses.append(epoch_tr_loss); train_accs.append(epoch_tr_acc)
+        val_losses.append(epoch_val_loss);   val_accs.append(epoch_val_acc)
+        print_epoch_stats(epoch, num_epochs, epoch_tr_loss, epoch_tr_acc,
+                          epoch_val_loss, epoch_val_acc)
 
-                if batch_idx % 10 == 0:
-                    print(f"[Epoch {epoch+1}] Batch {batch_idx}/{len(val_loader)} | Val Loss: {loss.item():.4f}")
+    import os
 
-        val_loss /= len(val_loader.dataset)
-        val_acc = correct / total if total > 0 else 0.0
+    # ---------- Итог ----------
+    best_acc  = max(val_accs)
+    best_ep   = val_accs.index(best_acc) + 1
+    print(f"\n🏆 Best val-accuracy: {best_acc:.4f} at epoch {best_ep}")
 
-        print(f"Validation Loss: {val_loss:.4f} | Accuracy: {val_acc:.4f}\n")
+    # Создаем директорию, если её нет
+    os.makedirs("src/models", exist_ok=True)
 
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            best_model = model.state_dict()
-            print("Best model updated.")
+    torch.save({
+        "epoch":          num_epochs,
+        "model_state":    model.state_dict(),
+        "optimizer_state":optimizer.state_dict(),
+        "train_losses":   train_losses,
+        "train_accs":     train_accs,
+        "val_losses":     val_losses,
+        "val_accs":       val_accs,
+        "best_acc":       best_acc,
+        "best_epoch":     best_ep
+    }, "models/vgg16_baseline.pth")
 
-    # testing
-    total = 0
-    correct = 0
-    if best_model is not None:
-        model.load_state_dict(best_model)
-    with torch.no_grad():
-        for images, labels in test_loader:
-            images = images.to(device)
-            labels = labels.to(device)
-
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-
-    print("Test accuracy: {:.4f}".format(correct / total if total > 0 else 0.0))
-
-    os.makedirs("dict_models", exist_ok=True)
-
-    torch.save(best_model, "dict_models/vgg16_baseline.pth")
-    print("Model saved to dict_models/vgg16_baseline.pth")
+    print("✅  Saved to  models/vgg16_baseline.pth")
