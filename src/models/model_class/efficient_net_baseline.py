@@ -5,8 +5,8 @@ from torchvision import models
 
 class EfficientNetBaseline(nn.Module):
     """
-    EfficientNet-B0 baseline для бинарной классификации.
-    Использует предобученные веса ImageNet.
+    EfficientNet-B0 baseline for binary classification(road accident).
+    Uses pretrained ImageNet weights.
     """
     def __init__(self, num_classes=2, pretrained=True, freeze_features=True, model_variant='b0'):
         super(EfficientNetBaseline, self).__init__()

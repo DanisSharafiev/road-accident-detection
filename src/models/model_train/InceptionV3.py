@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 from ...data.data_loader import get_data_loader
-from ..model_class.resnet import ResNet50Baseline
+from ..model_class.InceptionV3 import InceptionV3Baseline
 from sklearn.metrics import precision_score, recall_score, confusion_matrix
+import numpy as np
 
 # ──────────────────────── Paths ────────────────────────
 train_paths = {
@@ -27,7 +28,6 @@ def calculate_accuracy(outputs, labels):
     correct = (preds == labels).sum().item()
     return correct, total
 
-
 def print_epoch_stats(ep, num_ep, tr_loss, tr_acc, val_loss, val_acc, val_prec, val_rec, conf_mat):
     bar = "=" * 80
     print(bar)
@@ -45,7 +45,7 @@ if __name__ == "__main__":
     val_loader   = get_data_loader(val_paths,   batch_size=16, shuffle=False, num_workers=4)
     print(f"📁 Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
 
-    model = ResNet50Baseline(num_classes=2, pretrained=True, freeze_features=True)
+    model = InceptionV3Baseline(num_classes=2, pretrained=True, freeze_features=True)
 
     criterion   = nn.CrossEntropyLoss()
     optimizer   = torch.optim.Adam(model.parameters(), lr=1e-4)
@@ -73,13 +73,22 @@ if __name__ == "__main__":
             imgs, lbls = imgs.to(device), lbls.to(device)
 
             optimizer.zero_grad()
-            outs  = model(imgs)
-            loss  = criterion(outs, lbls)
+
+            outs = model(imgs)
+            if model.training:
+                main_out, aux_out = outs
+                loss1 = criterion(main_out, lbls)
+                loss2 = criterion(aux_out, lbls)
+                loss = loss1 + 0.3 * loss2
+                outs = main_out
+            else:
+                loss = criterion(outs, lbls)
+
             loss.backward()
             optimizer.step()
 
             run_loss += loss.item() * imgs.size(0)
-            c, t     = calculate_accuracy(outs, lbls)
+            c, t = calculate_accuracy(outs, lbls)
             correct += c; total += t
 
             if b % 10 == 0:
@@ -100,10 +109,10 @@ if __name__ == "__main__":
         with torch.no_grad():
             for imgs, lbls in val_loader:
                 imgs, lbls = imgs.to(device), lbls.to(device)
-                outs = model(imgs)
+                outs = model(imgs)     # eval mode returns main output only
                 loss = criterion(outs, lbls)
                 v_loss += loss.item() * imgs.size(0)
-                c, t   = calculate_accuracy(outs, lbls)
+                c, t = calculate_accuracy(outs, lbls)
                 v_correct += c; v_total += t
 
                 preds = torch.argmax(outs, dim=1)
@@ -135,15 +144,15 @@ if __name__ == "__main__":
     print(f"\n🏆 Best val-accuracy: {best_acc:.4f} at epoch {best_ep}")
 
     torch.save({
-        "epoch":          num_epochs,
-        "model_state":    model.state_dict(),
-        "optimizer_state":optimizer.state_dict(),
-        "train_losses":   train_losses,
-        "train_accs":     train_accs,
-        "val_losses":     val_losses,
-        "val_accs":       val_accs,
-        "best_acc":       best_acc,
-        "best_epoch":     best_ep
-    }, "models/resnet50_baseline.pth")
+        "epoch": num_epochs,
+        "model_state": model.state_dict(),
+        "optimizer_state": optimizer.state_dict(),
+        "train_losses": train_losses,
+        "train_accs": train_accs,
+        "val_losses": val_losses,
+        "val_accs": val_accs,
+        "best_acc": best_acc,
+        "best_epoch": best_ep
+    }, "models/inceptionv3_baseline.pth")
 
-    print("✅  Saved to  models/resnet50_baseline.pth")
+    print("✅  Saved to  models/inceptionv3_baseline.pth")

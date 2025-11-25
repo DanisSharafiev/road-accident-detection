@@ -3,8 +3,9 @@ import torch.nn as nn
 from ...data.data_loader import get_data_loader
 from ..model_class.efficient_net_baseline import EfficientNetBaseline
 
+from sklearn.metrics import precision_score, recall_score, confusion_matrix
 
-# ──────────────────────── Пути к данным ────────────────────────
+# ──────────────────────── Paths ────────────────────────
 train_paths = {
     "datasets/1/data/train/Accident":      1,
     "datasets/1/data/train/Non Accident":  0
@@ -20,42 +21,38 @@ test_paths = {
     "datasets/1/data/test/Non Accident":   0
 }
 
-
-# ────────────────── Вспомогательные функции ──────────────────
+# ────────────────── Helper functions ──────────────────
 def calculate_accuracy(outputs, labels):
-    """Возвращает (correct, total) для вычисления accuracy."""
     _, preds = torch.max(outputs.data, 1)
     total   = labels.size(0)
     correct = (preds == labels).sum().item()
     return correct, total
 
 
-def print_epoch_stats(ep, num_ep, tr_loss, tr_acc, val_loss, val_acc):
-    """Красивый вывод статистики эпохи."""
+def print_epoch_stats(ep, num_ep, tr_loss, tr_acc, val_loss, val_acc, val_prec, val_rec, conf_mat):
     bar = "=" * 80
     print(bar)
     print(f"📊  EPOCH [{ep+1:2d}/{num_ep:2d}]")
     print(f"   🔹 Train      Loss: {tr_loss:.6f} | Acc: {tr_acc:.4f} ({tr_acc*100:5.2f}%)")
     print(f"   🔹 Validation Loss: {val_loss:.6f} | Acc: {val_acc:.4f} ({val_acc*100:5.2f}%)")
+    print(f"   🔹 Validation Precision: {val_prec}")
+    print(f"   🔹 Validation Recall:    {val_rec}")
+    print(f"   🔹 Confusion Matrix:\n{conf_mat}")
     print(bar)
 
-
-# ──────────────────────── Точка входа ────────────────────────
+# ──────────────────────── Entry point ────────────────────────
 if __name__ == "__main__":
-    # Даталоадеры
     train_loader = get_data_loader(train_paths, batch_size=16, shuffle=True,  num_workers=4)
     val_loader   = get_data_loader(val_paths,   batch_size=16, shuffle=False, num_workers=4)
     print(f"📁 Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
 
-    # Модель (можно выбрать 'b0', 'b1', 'b2' для разных версий EfficientNet)
     model = EfficientNetBaseline(
         num_classes=2,
         pretrained=True,
         freeze_features=True,
-        model_variant='b0'  # или 'b1', 'b2' для более мощных моделей
+        model_variant='b0'  # or 'b1', 'b2' for stronger models
     )
 
-    # Обучение
     criterion   = nn.CrossEntropyLoss()
     optimizer   = torch.optim.Adam(model.parameters(), lr=1e-4)
     num_epochs  = 10
@@ -67,11 +64,11 @@ if __name__ == "__main__":
           f"{sum(p.numel() for p in model.parameters())}/"
           f"{sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
-    # История
     train_losses, val_losses = [], []
     train_accs,  val_accs   = [], []
 
-    print("\n🔥 START TRAINING"); print("=" * 80)
+    print("\n🔥 START TRAINING")
+    print("=" * 80)
 
     for epoch in range(num_epochs):
         # ---------- Train ----------
@@ -102,6 +99,10 @@ if __name__ == "__main__":
         # ---------- Validation ----------
         model.eval()
         v_loss, v_correct, v_total = 0.0, 0, 0
+
+        all_preds = []
+        all_labels = []
+
         with torch.no_grad():
             for imgs, lbls in val_loader:
                 imgs, lbls = imgs.to(device), lbls.to(device)
@@ -111,23 +112,35 @@ if __name__ == "__main__":
                 c, t   = calculate_accuracy(outs, lbls)
                 v_correct += c; v_total += t
 
+                preds = torch.argmax(outs, dim=1)
+                all_preds.extend(preds.cpu().numpy())
+                all_labels.extend(lbls.cpu().numpy())
+
         epoch_val_loss = v_loss / len(val_loader.dataset)
         epoch_val_acc  = v_correct / v_total
 
-        # Сохраняем историю и выводим статистику
-        train_losses.append(epoch_tr_loss); train_accs.append(epoch_tr_acc)
-        val_losses.append(epoch_val_loss);   val_accs.append(epoch_val_acc)
-        print_epoch_stats(epoch, num_epochs, epoch_tr_loss, epoch_tr_acc,
-                          epoch_val_loss, epoch_val_acc)
+        val_precision = precision_score(all_labels, all_preds, average=None)
+        val_recall = recall_score(all_labels, all_preds, average=None)
+        conf_matrix = confusion_matrix(all_labels, all_preds)
 
-    import os
+        train_losses.append(epoch_tr_loss)
+        train_accs.append(epoch_tr_acc)
+        val_losses.append(epoch_val_loss)
+        val_accs.append(epoch_val_acc)
 
-    # ---------- Итог ----------
-    best_acc  = max(val_accs)
-    best_ep   = val_accs.index(best_acc) + 1
+        print_epoch_stats(
+            epoch, num_epochs,
+            epoch_tr_loss, epoch_tr_acc,
+            epoch_val_loss, epoch_val_acc,
+            val_precision, val_recall,
+            conf_matrix
+        )
+
+    best_acc = max(val_accs)
+    best_ep = val_accs.index(best_acc) + 1
     print(f"\n🏆 Best val-accuracy: {best_acc:.4f} at epoch {best_ep}")
 
-    # Создаем директорию, если её нет
+    import os
     os.makedirs("models", exist_ok=True)
 
     torch.save({
