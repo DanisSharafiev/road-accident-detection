@@ -54,9 +54,15 @@ if __name__ == "__main__":
     criterion   = nn.CrossEntropyLoss()
     optimizer   = torch.optim.Adam(model.parameters(), lr=1e-4)
     num_epochs  = 10
-    # Use CPU for now due to MPS adaptive pooling issue
-    # https://github.com/pytorch/pytorch/issues/96056
-    device      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        print(f"Using NVIDIA GPU: {torch.cuda.get_device_name(0)}")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+        print("Using Apple Silicon GPU (MPS)")
+    else:
+        device = torch.device("cpu")
+        print("Using CPU")
     model       = model.to(device)
 
     print(f"Device: {device}")
