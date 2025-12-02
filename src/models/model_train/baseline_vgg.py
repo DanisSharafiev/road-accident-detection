@@ -34,18 +34,18 @@ def print_epoch_stats(ep, num_ep, tr_loss, tr_acc, val_loss, val_acc):
     """Красивый вывод статистики эпохи."""
     bar = "=" * 80
     print(bar)
-    print(f"📊  EPOCH [{ep+1:2d}/{num_ep:2d}]")
-    print(f"   🔹 Train      Loss: {tr_loss:.6f} | Acc: {tr_acc:.4f} ({tr_acc*100:5.2f}%)")
-    print(f"   🔹 Validation Loss: {val_loss:.6f} | Acc: {val_acc:.4f} ({val_acc*100:5.2f}%)")
+    print(f"EPOCH [{ep+1:2d}/{num_ep:2d}]")
+    print(f"   Train      Loss: {tr_loss:.6f} | Acc: {tr_acc:.4f} ({tr_acc*100:5.2f}%)")
+    print(f"   Validation Loss: {val_loss:.6f} | Acc: {val_acc:.4f} ({val_acc*100:5.2f}%)")
     print(bar)
 
 
 # ──────────────────────── Точка входа ────────────────────────
 if __name__ == "__main__":
-    # Даталоадеры
-    train_loader = get_data_loader(train_paths, batch_size=16, shuffle=True,  num_workers=4)
-    val_loader   = get_data_loader(val_paths,   batch_size=16, shuffle=False, num_workers=4)
-    print(f"📁 Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
+    # Даталоадеры (num_workers=0 to avoid multiprocessing issues on macOS)
+    train_loader = get_data_loader(train_paths, batch_size=16, shuffle=True,  num_workers=0)
+    val_loader   = get_data_loader(val_paths,   batch_size=16, shuffle=False, num_workers=0)
+    print(f"Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
 
     # Модель
     model = VGG16Baseline(num_classes=2, pretrained=True, freeze_features=True)
@@ -54,11 +54,13 @@ if __name__ == "__main__":
     criterion   = nn.CrossEntropyLoss()
     optimizer   = torch.optim.Adam(model.parameters(), lr=1e-4)
     num_epochs  = 10
-    device      = torch.device("cuda")
+    # Use CPU for now due to MPS adaptive pooling issue
+    # https://github.com/pytorch/pytorch/issues/96056
+    device      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model       = model.to(device)
 
-    print(f"🚀 Device: {device}")
-    print(f"🎯 Params total/trainable: "
+    print(f"Device: {device}")
+    print(f"Params total/trainable: "
           f"{sum(p.numel() for p in model.parameters())}/"
           f"{sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
@@ -66,7 +68,7 @@ if __name__ == "__main__":
     train_losses, val_losses = [], []
     train_accs,  val_accs   = [], []
 
-    print("\n🔥 START TRAINING"); print("=" * 80)
+    print("\nSTART TRAINING"); print("=" * 80)
 
     for epoch in range(num_epochs):
         # ---------- Train ----------
@@ -120,10 +122,10 @@ if __name__ == "__main__":
     # ---------- Итог ----------
     best_acc  = max(val_accs)
     best_ep   = val_accs.index(best_acc) + 1
-    print(f"\n🏆 Best val-accuracy: {best_acc:.4f} at epoch {best_ep}")
+    print(f"\nBest val-accuracy: {best_acc:.4f} at epoch {best_ep}")
 
     # Создаем директорию, если её нет
-    os.makedirs("src/models", exist_ok=True)
+    os.makedirs("models", exist_ok=True)
 
     torch.save({
         "epoch":          num_epochs,
@@ -137,4 +139,4 @@ if __name__ == "__main__":
         "best_epoch":     best_ep
     }, "models/vgg16_baseline.pth")
 
-    print("✅  Saved to  models/vgg16_baseline.pth")
+    print("Saved to  models/vgg16_baseline.pth")

@@ -1,0 +1,95 @@
+services:
+  # Init container - downloads data and trains model
+  init-setup:
+    build:
+      context: .
+      dockerfile: Dockerfile.init
+    container_name: accident-detection-init
+    volumes:
+      - ./datasets:/app/datasets
+      - ./dict_models:/app/dict_models
+      - ./models:/app/models
+    environment:
+      - PYTHONUNBUFFERED=1
+      - KAGGLE_USERNAME=${KAGGLE_USERNAME}
+      - KAGGLE_KEY=${KAGGLE_KEY}
+    networks:
+      - monitoring
+
+  # Main services (same as before)
+  accident-detection-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: accident-detection-server
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+      - ./dict_models:/app/dict_models
+      - ./src:/app/src
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      init-setup:
+        condition: service_completed_successfully
+      loki:
+        condition: service_started
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./config/loki-config.yml:/etc/loki/local-config.yaml
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: promtail
+    volumes:
+      - ./logs:/var/log/app
+      - ./config/promtail-config.yml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - ./config/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ./config/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - loki
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  loki-data:
+  grafana-data:
+

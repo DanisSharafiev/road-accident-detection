@@ -1,0 +1,44 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Scrape logs from the accident detection server
+  - job_name: accident-detection
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: accident-detection
+          service: cloud-server
+          __path__: /var/log/app/*.log
+    
+    pipeline_stages:
+      # Parse JSON logs
+      - json:
+          expressions:
+            time: time
+            level: level
+            message: message
+            service: service
+      
+      # Extract timestamp
+      - timestamp:
+          source: time
+          format: RFC3339
+      
+      # Set labels
+      - labels:
+          level:
+          service:
+      
+      # Output the message
+      - output:
+          source: message
+
