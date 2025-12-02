@@ -5,6 +5,19 @@ __pycache__/
 
 datasets/
 
+# Models and videos
+models/
+dict_models/
+*.pth
+*.mp4
+*.avi
+*.mov
+
+# Logs
+logs/
+*.log
+*.txt
+
 # C extensions
 *.so
 
