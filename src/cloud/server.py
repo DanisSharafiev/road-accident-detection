@@ -9,6 +9,7 @@ Supports:
 import asyncio
 import json
 import logging
+import os
 from datetime import datetime
 from typing import Dict, List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -22,6 +23,9 @@ import base64
 
 from src.realtime.video_inference import VideoInference
 from src.realtime.q import Queue
+
+# Enable verbose logging if environment variable is set
+VERBOSE_LOGGING = os.getenv('VERBOSE_LOGGING', 'false').lower() == 'true'
 
 
 # Logging configuration for Loki
@@ -69,6 +73,7 @@ class ConnectionManager:
         self.log_connections: List[WebSocket] = []
         self.alerts: List[Alert] = []
         self.inference_engine: Optional[VideoInference] = None
+        self.accident_active: bool = False  # Track if accident is currently active
         
     async def connect_video(self, websocket: WebSocket):
         await websocket.accept()
@@ -96,8 +101,8 @@ class ConnectionManager:
         for connection in self.log_connections:
             try:
                 await connection.send_json(log_data)
-            except Exception as e:
-                logger.error(f"Error broadcasting log: {e}")
+            except Exception:
+                # Silently mark for disconnection
                 disconnected.append(connection)
         
         # Clean up disconnected clients
@@ -218,35 +223,64 @@ async def websocket_video_endpoint(websocket: WebSocket):
                         # Send prediction back
                         await websocket.send_json(response)
                         
-                        # Log prediction
+                        # Broadcast to WebSocket clients
+                        log_level = "INFO" if not accident else "WARNING"
+                        log_message = f"Prediction: {class_name} (conf: {confidence:.2f})"
+                        
                         await manager.broadcast_log({
                             "timestamp": datetime.now().isoformat(),
-                            "level": "INFO" if not accident else "WARNING",
-                            "message": f"Prediction: {class_name} (conf: {confidence:.2f})",
+                            "level": log_level,
+                            "message": log_message,
                             "service": "accident-detection",
                             "data": response
                         })
                         
-                        # If accident detected, create alert
+                        # Log to file if verbose logging is enabled
+                        if VERBOSE_LOGGING:
+                            if log_level == "INFO":
+                                logger.info(log_message)
+                            else:
+                                logger.warning(log_message)
+                        
+                        # If accident detected, create alert (only once per accident event)
                         if accident and not noise:
-                            alert = Alert(
-                                timestamp=datetime.now().isoformat(),
-                                severity="critical",
-                                message="ACCIDENT DETECTED!",
-                                confidence=float(confidence),
-                                metadata={"noise": False}
-                            )
-                            manager.add_alert(alert)
-                            
-                            await manager.broadcast_log({
-                                "timestamp": datetime.now().isoformat(),
-                                "level": "CRITICAL",
-                                "message": "ACCIDENT DETECTED!",
-                                "service": "accident-detection",
-                                "confidence": float(confidence)
-                            })
+                            # Only log if this is a new accident (state change)
+                            if not manager.accident_active:
+                                manager.accident_active = True
+                                
+                                alert = Alert(
+                                    timestamp=datetime.now().isoformat(),
+                                    severity="critical",
+                                    message="ACCIDENT DETECTED!",
+                                    confidence=float(confidence),
+                                    metadata={"noise": False}
+                                )
+                                manager.add_alert(alert)
+                                
+                                # Log to Loki with alert type
+                                await manager.broadcast_log({
+                                    "timestamp": datetime.now().isoformat(),
+                                    "level": "CRITICAL",
+                                    "message": "ACCIDENT DETECTED!",
+                                    "service": "accident-detection",
+                                    "type": "alert",
+                                    "alert_type": "accident",
+                                    "confidence": float(confidence),
+                                    "severity": "critical"
+                                })
+                                
+                                # Also log to file for persistence
+                                logger.critical(json.dumps({
+                                    "type": "alert",
+                                    "alert_type": "accident",
+                                    "message": "ACCIDENT DETECTED!",
+                                    "confidence": float(confidence),
+                                    "severity": "critical",
+                                    "timestamp": datetime.now().isoformat()
+                                }))
                         
                         elif accident and noise:
+                            # Accident with noise - don't create CRITICAL alert
                             alert = Alert(
                                 timestamp=datetime.now().isoformat(),
                                 severity="high",
@@ -263,6 +297,11 @@ async def websocket_video_endpoint(websocket: WebSocket):
                                 "service": "accident-detection",
                                 "confidence": float(confidence)
                             })
+                        else:
+                            # No accident detected - reset state
+                            if manager.accident_active:
+                                manager.accident_active = False
+                                logger.info("Accident cleared")
                     
                 except Exception as e:
                     logger.error(f"Error processing frame: {e}")

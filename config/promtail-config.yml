@@ -16,11 +16,11 @@ scrape_configs:
           - localhost
         labels:
           job: accident-detection
-          service: cloud-server
+          service: accident-detection
           __path__: /var/log/app/*.log
     
     pipeline_stages:
-      # Parse JSON logs
+      # Parse JSON logs (first level)
       - json:
           expressions:
             time: time
@@ -31,12 +31,52 @@ scrape_configs:
       # Extract timestamp
       - timestamp:
           source: time
-          format: RFC3339
+          format: "2006-01-02 15:04:05,000"
+      
+      # Parse nested JSON in message field (for alerts)
+      - json:
+          expressions:
+            alert_type: type
+            alert_message: message
+            confidence: confidence
+            severity: severity
+            alert_timestamp: timestamp
+          source: message
       
       # Set labels
       - labels:
           level:
           service:
+          alert_type:
+          severity:
+      
+      # Output the message
+      - output:
+          source: message
+
+  # Scrape logs from local realtime mode
+  - job_name: realtime-local
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: realtime-local
+          service: accident-detection
+          __path__: /var/log/app/accident_logs*.txt
+    
+    pipeline_stages:
+      # Parse text logs with format: [LEVEL] YYYY-MM-DD HH:MM:SS - MESSAGE
+      - regex:
+          expression: '^\[(?P<level>\w+)\] (?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - (?P<message>.*)$'
+      
+      # Extract timestamp
+      - timestamp:
+          source: timestamp
+          format: "2006-01-02 15:04:05"
+      
+      # Set labels
+      - labels:
+          level:
       
       # Output the message
       - output:

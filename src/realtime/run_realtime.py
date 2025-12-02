@@ -40,11 +40,11 @@ def main():
     inference = VideoInference(model_path=args.model)
 
     if args.video:
-        print(f"[INFO] Запуск видеофайла: {args.video}")
+        print(f"[INFO] video: {args.video}")
         inference.run(source=args.video)
 
     elif args.camera is not None:
-        print(f"[INFO] Запуск камеры: {args.camera}")
+        print(f"[INFO] camera: {args.camera}")
         inference.run(source=args.camera)
 
 

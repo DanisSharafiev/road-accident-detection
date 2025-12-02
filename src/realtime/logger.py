@@ -1,5 +1,5 @@
 import os
-from time import strftime, localtime
+from time import strftime, localtime, gmtime
 
 class Logger:
     def __init__(self,
@@ -25,12 +25,13 @@ class Logger:
         if log_level < self.log_level:
             return
         
+        # Use UTC time for Loki compatibility
         if log_level == 2:
-            message = f"[INFO] {strftime('%Y-%m-%d %H:%M:%S', localtime())} - {message}"
+            message = f"[INFO] {strftime('%Y-%m-%d %H:%M:%S', gmtime())} - {message}"
         elif log_level == 1:
-            message = f"[WARNING] {strftime('%Y-%m-%d %H:%M:%S', localtime())} - {message}"
+            message = f"[WARNING] {strftime('%Y-%m-%d %H:%M:%S', gmtime())} - {message}"
         elif log_level == 0:
-            message = f"[ACCIDENT] {strftime('%Y-%m-%d %H:%M:%S', localtime())} - {message}"
+            message = f"[ACCIDENT] {strftime('%Y-%m-%d %H:%M:%S', gmtime())} - {message}"
 
         with open(self.log_path, 'a') as f:
             f.write(message + '\n')

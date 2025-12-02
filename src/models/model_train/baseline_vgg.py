@@ -4,7 +4,6 @@ from ...data.data_loader import get_data_loader
 from ..model_class.baseline_vgg16 import VGG16Baseline
 
 
-# ──────────────────────── Пути к данным ────────────────────────
 train_paths = {
     "datasets/1/data/train/Accident":      1,
     "datasets/1/data/train/Non Accident":  0
@@ -21,7 +20,6 @@ test_paths = {
 }
 
 
-# ────────────────── Вспомогательные функции ──────────────────
 def calculate_accuracy(outputs, labels):
     """Возвращает (correct, total) для вычисления accuracy."""
     _, preds = torch.max(outputs.data, 1)
@@ -31,7 +29,7 @@ def calculate_accuracy(outputs, labels):
 
 
 def print_epoch_stats(ep, num_ep, tr_loss, tr_acc, val_loss, val_acc):
-    """Красивый вывод статистики эпохи."""
+    """вывод статистики эпохи."""
     bar = "=" * 80
     print(bar)
     print(f"EPOCH [{ep+1:2d}/{num_ep:2d}]")
@@ -53,13 +51,12 @@ if __name__ == "__main__":
     # Обучение
     criterion   = nn.CrossEntropyLoss()
     optimizer   = torch.optim.Adam(model.parameters(), lr=1e-4)
-    num_epochs  = 10
+    num_epochs  = 1
+    # VGG16 has issues with MPS adaptive pooling, so we use CPU on Apple Silicon
+    # For NVIDIA GPU, CUDA will be used
     if torch.cuda.is_available():
         device = torch.device("cuda")
         print(f"Using NVIDIA GPU: {torch.cuda.get_device_name(0)}")
-    elif torch.backends.mps.is_available():
-        device = torch.device("mps")
-        print("Using Apple Silicon GPU (MPS)")
     else:
         device = torch.device("cpu")
         print("Using CPU")

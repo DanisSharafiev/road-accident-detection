@@ -23,6 +23,65 @@
       "fieldConfig": {
         "defaults": {
           "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 10,
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Time"
+          }
+        ]
+      },
+      "pluginVersion": "10.2.0",
+      "targets": [
+        {
+          "datasource": "Loki",
+          "expr": "{service=\"accident-detection\", level=~\"CRITICAL|WARNING\"} |= \"ACCIDENT DETECTED\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Accident Alerts (Critical Events)",
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "Line"
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": "Loki",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
             "mode": "palette-classic"
           },
           "custom": {
@@ -64,7 +123,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 0
+        "y": 8
       },
       "id": 1,
       "options": {
@@ -80,7 +139,7 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "sum(count_over_time({service=\"accident-detection\", level=\"CRITICAL\"}[1m]))",
+          "expr": "sum(count_over_time({service=\"accident-detection\", level=~\"CRITICAL|WARNING\"} |= \"ACCIDENT DETECTED\" [1m]))",
           "refId": "A",
           "legendFormat": "Critical Accidents"
         },
@@ -126,7 +185,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 8
+        "y": 16
       },
       "id": 2,
       "options": {
@@ -145,7 +204,7 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "sum(count_over_time({service=\"accident-detection\", level=\"CRITICAL\"}[5m]))",
+          "expr": "sum(count_over_time({service=\"accident-detection\", level=~\"CRITICAL|WARNING\"} |= \"ACCIDENT DETECTED\" [5m]))",
           "refId": "A"
         }
       ],
@@ -177,7 +236,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 8
+        "y": 16
       },
       "id": 3,
       "options": {
@@ -248,7 +307,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 8
+        "y": 16
       },
       "id": 4,
       "options": {
@@ -320,7 +379,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 8
+        "y": 16
       },
       "id": 5,
       "options": {
@@ -371,35 +430,6 @@
         }
       ],
       "title": "📋 Real-time Logs",
-      "type": "logs"
-    },
-    {
-      "datasource": "Loki",
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 24
-      },
-      "id": 7,
-      "options": {
-        "dedupStrategy": "none",
-        "enableLogDetails": true,
-        "prettifyLogMessage": false,
-        "showCommonLabels": false,
-        "showLabels": false,
-        "showTime": true,
-        "sortOrder": "Descending",
-        "wrapLogMessage": false
-      },
-      "pluginVersion": "8.0.0",
-      "targets": [
-        {
-          "expr": "{service=\"accident-detection\", level=~\"CRITICAL|ERROR\"}",
-          "refId": "A"
-        }
-      ],
-      "title": "🚨 Critical Events & Accidents",
       "type": "logs"
     }
   ],

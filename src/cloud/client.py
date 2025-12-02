@@ -44,8 +44,13 @@ class CloudClient:
             return None
         
         try:
-            # Encode frame to JPEG
-            _, buffer = cv2.imencode('.jpg', frame)
+            # Resize frame for faster processing (optional, adjust as needed)
+            # Uncomment next line to resize to 640x480 for better performance
+            # frame = cv2.resize(frame, (640, 480))
+            
+            # Encode frame to JPEG with lower quality for faster transfer
+            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 70]  # 70% quality
+            _, buffer = cv2.imencode('.jpg', frame, encode_param)
             # Convert to base64
             frame_base64 = base64.b64encode(buffer).decode('utf-8')
             
@@ -110,8 +115,13 @@ class CloudClient:
             print(f"Cannot open video source: {source}")
             return
         
-        print(f"📹 Starting video stream from: {source}")
+        # Set camera FPS (if it's a camera)
+        if isinstance(source, int):
+            cap.set(cv2.CAP_PROP_FPS, 15)  # Limit to 15 FPS
+        
+        print(f"Starting video stream from: {source}")
         print("Press 'q' to quit, 'p' to pause")
+        print("Processing every frame")
         
         paused = False
         frame_count = 0
@@ -121,10 +131,12 @@ class CloudClient:
                 if not paused:
                     ret, frame = cap.read()
                     if not ret:
-                        print("📹 Video stream ended")
+                        print("Video stream ended")
                         break
                     
-                    # Send frame and get prediction
+                    frame_count += 1
+                    
+                    # Send frame and get prediction (every frame)
                     result = await self.send_frame(frame)
                     
                     if result:
@@ -133,16 +145,22 @@ class CloudClient:
                         confidence = result.get("confidence", 0.0)
                         accident = result.get("accident_detected", False)
                         
+                        # Log every frame prediction
+                        print(f"Frame {frame_count}: {prediction} (conf: {confidence:.2f})", end="")
+                        if accident:
+                            print(" - ACCIDENT DETECTED!")
+                        else:
+                            print()
+                        
                         color = (0, 255, 0) if prediction == "Non-Accident" else (0, 0, 255)
                         text = f"{prediction} ({confidence:.2f})"
                         cv2.putText(frame, text, (20, 40),
                                   cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
                         
                         if accident:
-                            cv2.putText(frame, "🚨 ACCIDENT DETECTED!", (20, 80),
+                            cv2.putText(frame, "ACCIDENT DETECTED!", (20, 80),
                                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
                     
-                    frame_count += 1
                     cv2.putText(frame, f"Frame: {frame_count}", (20, frame.shape[0] - 20),
                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
                 

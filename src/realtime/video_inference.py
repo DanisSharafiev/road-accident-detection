@@ -17,7 +17,17 @@ class VideoInference:
         )
 
         self.model = VGG16Baseline(num_classes=2, pretrained=False)
-        self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+        
+        # Load checkpoint
+        checkpoint = torch.load(model_path, map_location=self.device)
+        
+        # Extract model state from checkpoint
+        if isinstance(checkpoint, dict) and 'model_state' in checkpoint:
+            self.model.load_state_dict(checkpoint['model_state'])
+        else:
+            # If it's just the state dict directly
+            self.model.load_state_dict(checkpoint)
+        
         self.model.to(self.device)
         self.model.eval()
 
@@ -29,7 +39,7 @@ class VideoInference:
         self.class_names = {0: "Non-Accident", 1: "Accident"}
 
         self.logger = Logger(log_path="logs/", log_level=0)
-        self.queue = Queue(n=120, check_range=30, density=20, logger=self.logger)
+        self.queue = Queue(n=30, check_range=20, density=10, threshold=0.65, logger=self.logger)
 
         self.logger.log(f"Loaded model from {model_path}", log_level=0)
         self.logger.log(f"Running on device: {self.device}", log_level=0)
@@ -81,10 +91,26 @@ class VideoInference:
             if accident and not noise:
                 cv2.putText(frame, "ACCIDENT DETECTED!", (20, 80),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+                # Log accident only once (state tracking)
+                if not hasattr(self, '_accident_logged') or not self._accident_logged:
+                    self.logger.log(f"ACCIDENT DETECTED! Confidence: {conf:.2f}", log_level=1)
+                    self._accident_logged = True
             
-            if accident and noise:
+            elif accident and noise:
                 cv2.putText(frame, "ACCIDENT WITH NOISE DETECTED!", (20, 120),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 3)
+                # Log noisy accident
+                if not hasattr(self, '_noise_logged') or not self._noise_logged:
+                    self.logger.log(f"ACCIDENT WITH NOISE DETECTED! Confidence: {conf:.2f}", log_level=1)
+                    self._noise_logged = True
+            else:
+                # Reset logging flags when no accident
+                if hasattr(self, '_accident_logged'):
+                    if self._accident_logged:
+                        self.logger.log("Accident cleared", log_level=2)
+                    self._accident_logged = False
+                if hasattr(self, '_noise_logged'):
+                    self._noise_logged = False
 
             cv2.imshow("Real-time Accident Detection", frame)
 

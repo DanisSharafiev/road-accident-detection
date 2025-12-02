@@ -80,6 +80,13 @@ echo ""
 # Run training
 python -m src.models.model_train.baseline_vgg
 
+# Copy model to dict_models
+if [ -f "models/vgg16_baseline.pth" ]; then
+    mkdir -p dict_models
+    cp models/vgg16_baseline.pth dict_models/
+    echo "Model copied to dict_models/"
+fi
+
 # Deactivate venv
 deactivate
 
